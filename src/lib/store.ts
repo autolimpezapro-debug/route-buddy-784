@@ -59,8 +59,8 @@ export function ordenarRota(ps: Pedido[]): Pedido[] {
       if (d < bd) (bd = d), (bi = i);
     });
     const [n] = rest.splice(bi, 1);
-    out.push(n);
-    cur = n as { lat: number; lng: number };
+    out.push(n!);
+    cur = n! as { lat: number; lng: number };
   }
   return out;
 }

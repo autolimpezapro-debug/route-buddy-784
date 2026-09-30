@@ -123,18 +123,18 @@ export function itemsToLines(items: TItem[]): string[] {
   const rows: { y: number; parts: TItem[] }[] = [];
   for (const it of items) {
     if (!it.str.trim()) continue;
-    const y = it.transform[5];
+    const y = it.transform[5]!;
     let row = rows.find((r) => Math.abs(r.y - y) < 3);
     if (!row) rows.push((row = { y, parts: [] }));
     row.parts.push(it);
   }
   rows.sort((a, b) => b.y - a.y);
   return rows.map((r) => {
-    r.parts.sort((a, b) => a.transform[4] - b.transform[4]);
+    r.parts.sort((a, b) => a.transform[4]! - b.transform[4]!);
     let out = "";
     let lastEnd = -Infinity;
     for (const p of r.parts) {
-      const x = p.transform[4];
+      const x = p.transform[4]!;
       if (out) out += x - lastEnd > 8 ? " | " : x - lastEnd > 1 ? " " : "";
       out += p.str.trim();
       lastEnd = x + p.width;

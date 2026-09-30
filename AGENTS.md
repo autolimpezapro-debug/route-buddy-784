@@ -1,10 +1,5 @@
-<!-- LOVABLE:BEGIN -->
-> [!IMPORTANT]
-> This project is connected to [Lovable](https://lovable.dev). Avoid rewriting
-> published git history — force pushing, or rebasing/amending/squashing commits
-> that are already pushed — as it rewrites history on Lovable's side and the
-> user will likely lose their project history.
->
-> Commits you push to the connected branch sync back to Lovable and show up in
-> the editor, so keep the branch in a working state.
-<!-- LOVABLE:END -->
+# Agents notes
+- Orders stored in browser localStorage keyed by PC number — no backend requested; dedupe on import by PC number.
+- PDFs parsed client-side (pdfjs + jszip) in src/lib/pc-parser.ts — SAP B1 layout, lines of cells joined by " | ".
+- Geocoding via server fn (ViaCEP + Nominatim, 1 req/s); road route via public OSRM; tiles from OSM.
+- tsconfig noUncheckedIndexedAccess off — PDF text parsing indexes arrays heavily.

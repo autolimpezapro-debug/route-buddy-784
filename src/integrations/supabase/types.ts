@@ -14,6 +14,30 @@ export type Database = {
   }
   public: {
     Tables: {
+      motoristas: {
+        Row: {
+          id: string
+          lat: number
+          lng: number
+          nome: string
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          lat: number
+          lng: number
+          nome: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          lat?: number
+          lng?: number
+          nome?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       pedidos: {
         Row: {
           dados: Json

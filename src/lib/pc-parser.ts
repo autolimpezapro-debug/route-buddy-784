@@ -26,6 +26,16 @@ export type Pedido = {
   lng?: number;
   geoFalhou?: boolean;
   importadoEm: string;
+  coletaInicio?: string; // coleta em andamento
+  coletas?: Coleta[];
+  pendenteParaDia?: string; // após coleta parcial
+};
+
+export type Coleta = {
+  inicio: string;
+  fim: string;
+  tipo: "total" | "parcial";
+  itens: { descricao: string; un: string; pedido: string; coletado: string }[];
 };
 
 export type Status = "aguardando" | "rota" | "estoque" | "fabricacao" | "coletado";

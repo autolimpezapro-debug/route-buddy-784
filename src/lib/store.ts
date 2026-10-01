@@ -1,40 +1,93 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Pedido } from "./pc-parser";
+import { supabase } from "@/integrations/supabase/client";
 
-const KEY = "roteirizador.pedidos.v1";
+const LEGACY_KEY = "roteirizador.pedidos.v1";
+
+async function salvar(ps: Pedido[]) {
+  if (!ps.length) return;
+  const { error } = await supabase
+    .from("pedidos")
+    .upsert(ps.map((p) => ({ id: p.id, dados: p as never, updated_at: new Date().toISOString() })));
+  if (error) console.error("Erro ao salvar pedidos", error);
+}
 
 export function usePedidos() {
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [ready, setReady] = useState(false);
+  const ref = useRef<Pedido[]>([]);
+  ref.current = pedidos;
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) setPedidos(JSON.parse(raw));
-    } catch {
-      /* ignore */
-    }
-    setReady(true);
+    let ativo = true;
+    (async () => {
+      const all: Pedido[] = [];
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await supabase.from("pedidos").select("dados").range(from, from + 999);
+        if (error) { console.error(error); break; }
+        all.push(...(data ?? []).map((r) => r.dados as unknown as Pedido));
+        if (!data || data.length < 1000) break;
+      }
+      // Migrate data that was saved only in this browser before
+      try {
+        const raw = localStorage.getItem(LEGACY_KEY);
+        if (raw) {
+          const ids = new Set(all.map((p) => p.id));
+          const legacy = (JSON.parse(raw) as Pedido[]).filter((p) => !ids.has(p.id));
+          await salvar(legacy);
+          all.push(...legacy);
+          localStorage.removeItem(LEGACY_KEY);
+        }
+      } catch { /* ignore */ }
+      if (!ativo) return;
+      setPedidos(all);
+      setReady(true);
+    })();
+
+    const ch = supabase
+      .channel("pedidos-sync")
+      .on("postgres_changes", { event: "*", schema: "public", table: "pedidos" }, (payload) => {
+        if (payload.eventType === "DELETE") {
+          const id = (payload.old as { id?: string }).id;
+          setPedidos((ps) => ps.filter((p) => p.id !== id));
+        } else {
+          const p = (payload.new as { dados: Pedido }).dados;
+          setPedidos((ps) => (ps.some((x) => x.id === p.id) ? ps.map((x) => (x.id === p.id ? p : x)) : [...ps, p]));
+        }
+      })
+      .subscribe();
+    return () => { ativo = false; supabase.removeChannel(ch); };
   }, []);
 
-  useEffect(() => {
-    if (ready) localStorage.setItem(KEY, JSON.stringify(pedidos));
-  }, [pedidos, ready]);
-
   const update = useCallback((id: string, patch: Partial<Pedido>) => {
-    setPedidos((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+    const atual = ref.current.find((p) => p.id === id);
+    if (!atual) return;
+    const novo = { ...atual, ...patch };
+    setPedidos((ps) => ps.map((p) => (p.id === id ? novo : p)));
+    void salvar([novo]);
   }, []);
 
   // Merge keyed by order number: never duplicates
   const adicionar = useCallback((novos: Pedido[]) => {
-    setPedidos((ps) => {
-      const ids = new Set(ps.map((p) => p.id));
-      return [...ps, ...novos.filter((n) => !ids.has(n.id))];
-    });
+    const ids = new Set(ref.current.map((p) => p.id));
+    const add = novos.filter((n) => !ids.has(n.id));
+    setPedidos((ps) => [...ps, ...add]);
+    // ignoreDuplicates keeps existing records (with their status/coletas) untouched
+    if (add.length)
+      void supabase
+        .from("pedidos")
+        .upsert(add.map((p) => ({ id: p.id, dados: p as never })), { onConflict: "id", ignoreDuplicates: true })
+        .then(({ error }) => error && console.error(error));
   }, []);
 
-  const remover = useCallback((id: string) => setPedidos((ps) => ps.filter((p) => p.id !== id)), []);
-  const limpar = useCallback(() => setPedidos([]), []);
+  const remover = useCallback((id: string) => {
+    setPedidos((ps) => ps.filter((p) => p.id !== id));
+    void supabase.from("pedidos").delete().eq("id", id);
+  }, []);
+  const limpar = useCallback(() => {
+    setPedidos([]);
+    void supabase.from("pedidos").delete().neq("id", "");
+  }, []);
 
   return { pedidos, ready, update, adicionar, remover, limpar };
 }

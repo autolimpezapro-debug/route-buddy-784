@@ -26,9 +26,9 @@ export type Pedido = {
   lng?: number;
   geoFalhou?: boolean;
   importadoEm: string;
-  coletaInicio?: string; // coleta em andamento
+  coletaInicio?: string | undefined; // coleta em andamento
   coletas?: Coleta[];
-  pendenteParaDia?: string; // após coleta parcial
+  pendenteParaDia?: string | undefined; // após coleta parcial
 };
 
 export type Coleta = {

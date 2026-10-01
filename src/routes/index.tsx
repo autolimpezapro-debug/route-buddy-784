@@ -8,6 +8,7 @@ import { STATUS_LABEL, type Pedido, type Status } from "@/lib/pc-parser";
 import { usePedidos, ordenarRota, DEPOSITO } from "@/lib/store";
 import { importarArquivos } from "@/lib/importer";
 import { geocodeEndereco } from "@/lib/geo.functions";
+import { ColetaPanel } from "@/components/ColetaPanel";
 
 const RouteMap = lazy(() => import("@/components/RouteMap"));
 
@@ -289,6 +290,7 @@ function Index() {
                 </ul>
               )}
               {selecionado.observacoes && <p className="mt-2 text-xs italic text-muted-foreground">{selecionado.observacoes}</p>}
+              <ColetaPanel pedido={selecionado} onUpdate={(patch) => update(selecionado.id, patch)} />
               <div className="mt-3 grid grid-cols-2 gap-1">
                 {STATUSES.map((s) => (
                   <button
@@ -328,7 +330,11 @@ function Index() {
                     <div className="truncate text-xs font-medium">{p.empresa}</div>
                     <div className="truncate font-mono text-[10px] text-muted-foreground">PC {p.numero} · {p.cidade}</div>
                   </button>
-                  <button title="Marcar como coletado" onClick={() => update(p.id, { status: "coletado" })} className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-status-coletado hover:bg-muted">✓</button>
+                  {p.coletaInicio ? (
+                    <button title="Encerrar coleta" onClick={() => setSel(p.id)} className="rounded bg-status-coletado px-2 py-1 text-[10px] font-bold text-primary-foreground">Encerrar</button>
+                  ) : (
+                    <button title="Iniciar coleta" onClick={() => { update(p.id, { coletaInicio: new Date().toISOString() }); setSel(p.id); }} className="rounded bg-accent px-2 py-1 text-[10px] font-bold text-accent-foreground">▶ Iniciar</button>
+                  )}
                   <button title="Tirar da rota" onClick={() => update(p.id, { status: "aguardando" })} className="text-muted-foreground hover:text-destructive"><X className="h-3.5 w-3.5" /></button>
                 </li>
               ))}

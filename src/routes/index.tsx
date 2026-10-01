@@ -8,6 +8,8 @@ import { STATUS_LABEL, type Pedido, type Status } from "@/lib/pc-parser";
 import { usePedidos, ordenarRota, DEPOSITO } from "@/lib/store";
 import { importarArquivos } from "@/lib/importer";
 import { geocodeEndereco } from "@/lib/geo.functions";
+import { ColetaPanel } from "@/components/ColetaPanel";
+import { useMotoristas, useRastreio } from "@/lib/motoristas";
 
 const RouteMap = lazy(() => import("@/components/RouteMap"));
 
@@ -36,7 +38,10 @@ function Index() {
   const { pedidos, ready, update, adicionar, remover, limpar } = usePedidos();
   const geocode = useServerFn(geocodeEndereco);
   const [busca, setBusca] = useState("");
-  const [filtroStatus, setFiltroStatus] = useState<Status | "todos">("todos");
+  const [filtroStatus, setFiltroStatus] = useState<Status | "todos" | "novos">("todos");
+  const [novosIds, setNovosIds] = useState<Set<string>>(new Set());
+  const motoristas = useMotoristas();
+  const rastreio = useRastreio();
   const [sel, setSel] = useState<string | null>(null);
   const [importando, setImportando] = useState<string | null>(null);
   const [geoFila, setGeoFila] = useState(0);
@@ -95,7 +100,7 @@ function Index() {
   const lista = useMemo(() => {
     const q = busca.trim().toLowerCase();
     return pedidos
-      .filter((p) => filtroStatus === "todos" || p.status === filtroStatus)
+      .filter((p) => filtroStatus === "todos" || (filtroStatus === "novos" ? novosIds.has(p.id) : p.status === filtroStatus))
       .filter((p) =>
         !q ||
         [p.numero, p.empresa, p.cidade, p.bairro, p.endereco, p.destino, p.finalidade, ...p.itens.map((i) => i.descricao)]
@@ -104,7 +109,7 @@ function Index() {
           .includes(q),
       )
       .sort((a, b) => Number(b.numero) - Number(a.numero));
-  }, [pedidos, busca, filtroStatus]);
+  }, [pedidos, busca, filtroStatus, novosIds]);
 
   const contagem = useMemo(() => {
     const c = Object.fromEntries(STATUSES.map((s) => [s, 0])) as Record<Status, number>;
@@ -120,6 +125,8 @@ function Index() {
         setImportando(`Lendo pedidos ${d}/${t}`),
       );
       adicionar(res.novos);
+      setNovosIds(new Set(res.novos.map((p) => p.id)));
+      setFiltroStatus("novos");
       toast.success(`${res.novos.length} pedidos novos`, {
         description: `${res.duplicados} já existiam (ignorados) · ${res.ignorados.length} arquivos não são PC`,
       });
@@ -164,6 +171,15 @@ function Index() {
             </span>
           )}
         </div>
+        <button
+          onClick={() => (rastreio.ativo ? rastreio.parar() : rastreio.iniciar())}
+          title={rastreio.erro ?? "Compartilhar a localização deste aparelho em tempo real"}
+          className={`flex items-center gap-2 rounded px-3 py-2 text-sm font-semibold ${rastreio.ativo ? "bg-status-coletado text-primary-foreground" : "border border-sidebar-border hover:bg-sidebar-accent"}`}
+        >
+          <Navigation className={`h-4 w-4 ${rastreio.ativo ? "animate-pulse" : ""}`} />
+          {rastreio.ativo ? "Rastreando… (parar)" : "Sou motorista: rastrear"}
+        </button>
+        {rastreio.erro && <span className="text-xs text-destructive">{rastreio.erro}</span>}
         <input ref={fileRef} type="file" accept=".zip,.pdf" multiple className="hidden" onChange={(e) => onFiles(e.target.files)} />
         <button
           onClick={() => fileRef.current?.click()}
@@ -189,7 +205,7 @@ function Index() {
               />
             </div>
             <div className="flex flex-wrap gap-1">
-              {(["todos", ...STATUSES] as const).map((s) => (
+              {([...(novosIds.size ? (["novos"] as const) : []), "todos", ...STATUSES] as const).map((s) => (
                 <button
                   key={s}
                   onClick={() => setFiltroStatus(s)}
@@ -197,7 +213,7 @@ function Index() {
                     filtroStatus === s ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground hover:bg-muted"
                   }`}
                 >
-                  {s === "todos" ? `Todos ${pedidos.length}` : `${STATUS_LABEL[s]} ${contagem[s]}`}
+                  {s === "novos" ? `Novos da importação ${novosIds.size}` : s === "todos" ? `Todos ${pedidos.length}` : `${STATUS_LABEL[s]} ${contagem[s]}`}
                 </button>
               ))}
             </div>
@@ -256,7 +272,7 @@ function Index() {
         <main className="relative min-w-0 flex-1">
           <ClientOnly fallback={<div className="h-full w-full bg-muted" />}>
             <Suspense fallback={<div className="h-full w-full bg-muted" />}>
-              <RouteMap pedidos={pedidos} rota={rota} rotaGeo={rotaGeo} selecionado={sel} onSelect={onSelect} />
+              <RouteMap pedidos={pedidos} rota={rota} rotaGeo={rotaGeo} selecionado={sel} onSelect={onSelect} motoristas={motoristas} />
             </Suspense>
           </ClientOnly>
 
@@ -289,6 +305,7 @@ function Index() {
                 </ul>
               )}
               {selecionado.observacoes && <p className="mt-2 text-xs italic text-muted-foreground">{selecionado.observacoes}</p>}
+              <ColetaPanel pedido={selecionado} onUpdate={(patch) => update(selecionado.id, patch)} />
               <div className="mt-3 grid grid-cols-2 gap-1">
                 {STATUSES.map((s) => (
                   <button
@@ -328,7 +345,11 @@ function Index() {
                     <div className="truncate text-xs font-medium">{p.empresa}</div>
                     <div className="truncate font-mono text-[10px] text-muted-foreground">PC {p.numero} · {p.cidade}</div>
                   </button>
-                  <button title="Marcar como coletado" onClick={() => update(p.id, { status: "coletado" })} className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-status-coletado hover:bg-muted">✓</button>
+                  {p.coletaInicio ? (
+                    <button title="Encerrar coleta" onClick={() => setSel(p.id)} className="rounded bg-status-coletado px-2 py-1 text-[10px] font-bold text-primary-foreground">Encerrar</button>
+                  ) : (
+                    <button title="Iniciar coleta" onClick={() => { update(p.id, { coletaInicio: new Date().toISOString() }); setSel(p.id); }} className="rounded bg-accent px-2 py-1 text-[10px] font-bold text-accent-foreground">▶ Iniciar</button>
+                  )}
                   <button title="Tirar da rota" onClick={() => update(p.id, { status: "aguardando" })} className="text-muted-foreground hover:text-destructive"><X className="h-3.5 w-3.5" /></button>
                 </li>
               ))}

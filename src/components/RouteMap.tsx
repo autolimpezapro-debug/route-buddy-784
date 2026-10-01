@@ -11,13 +11,14 @@ type Props = {
   rotaGeo: [number, number][] | null;
   selecionado: string | null;
   onSelect: (id: string) => void;
+  motoristas?: { id: string; nome: string; lat: number; lng: number; updated_at: string }[];
 };
 
 function cssVar(name: string) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
-export default function RouteMap({ pedidos, rota, rotaGeo, selecionado, onSelect }: Props) {
+export default function RouteMap({ pedidos, rota, rotaGeo, selecionado, onSelect, motoristas }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const layer = useRef<L.LayerGroup | null>(null);
@@ -77,6 +78,20 @@ export default function RouteMap({ pedidos, rota, rotaGeo, selecionado, onSelect
       fitted.current = true;
     }
   }, [pedidos, rota, rotaGeo, selecionado, onSelect]);
+
+  const motLayer = useRef<L.LayerGroup | null>(null);
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    if (!motLayer.current) motLayer.current = L.layerGroup().addTo(m);
+    const g = motLayer.current;
+    g.clearLayers();
+    for (const d of motoristas ?? []) {
+      const icon = L.divIcon({ className: "", html: `<div class="pin pin-depot" style="border-radius:50%">🚚</div>`, iconSize: [34, 34], iconAnchor: [17, 17] });
+      const t = new Date(d.updated_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      L.marker([d.lat, d.lng], { icon, zIndexOffset: 2000 }).bindTooltip(`<b>${d.nome}</b><br/>atualizado ${t}`).addTo(g);
+    }
+  }, [motoristas]);
 
   useEffect(() => {
     const p = pedidos.find((x) => x.id === selecionado);
